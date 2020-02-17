@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 
@@ -8,6 +9,7 @@ import (
 )
 
 func main() {
+	fmt.Println("Hellow World!")
 	api := rest.NewApi()
 	api.Use(rest.DefaultDevStack...)
 	api.SetApp(rest.AppSimple(func(w rest.ResponseWriter, r *rest.Request) {
