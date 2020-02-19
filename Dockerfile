@@ -10,5 +10,6 @@ ADD . /go/src/example.com/t.szuuki/go-rest-sample
 ENV GO111MODULE=on
 RUN go mod download
 EXPOSE 8080
+EXPOSE 8000
 
 CMD ["go", "run", "/go/src/example.com/t.szuuki/go-rest-sample/main.go"]

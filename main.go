@@ -6,7 +6,21 @@ import (
 	"sync"
 
 	"github.com/ant0ine/go-json-rest/rest"
+	"github.com/gorilla/websocket"
 )
+
+var clients = make(map[*websocket.Conn]bool) // 接続されるクライアント
+var broadcast = make(chan Message)           // メッセージブロードキャストチャネル
+
+// upgrader
+var upgrader = websocket.Upgrader{}
+
+// Message struct
+type Message struct {
+	Email    string `json:"email"`
+	Username string `json:"username"`
+	Message  string `json:"message"`
+}
 
 func main() {
 	api := rest.NewApi()
@@ -26,13 +40,104 @@ func main() {
 		log.Fatal(err)
 	}
 	api.SetApp(router)
+
+	// ファイルサーバーを立ち上げる
+	fs := http.FileServer(http.Dir("./public"))
+	http.Handle("/", fs)
+	// websockerへのルーティングを紐づけ
+	http.HandleFunc("/ws", handleConnections)
+	go handleMessages()
+	go func() {
+		// サーバーをlocalhostのポート8000で立ち上げる
+		log.Println("http server started on :8000")
+		err := http.ListenAndServe(":8000", nil)
+		// エラーがあった場合ロギングする
+		if err != nil {
+			log.Fatal("ListenAndServe: ", err)
+		}
+	}()
+
 	log.Fatal(http.ListenAndServe(":8080", api.MakeHandler()))
 }
 
+func handleConnections(w http.ResponseWriter, r *http.Request) {
+	// 送られてきたGETリクエストをwebsocketにアップグレード
+	ws, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// 関数が終わった際に必ずwebsocketnのコネクションを閉じる
+	defer ws.Close()
+
+	// クライアントを新しく登録
+	clients[ws] = true
+
+	for {
+		var msg Message
+		// 新しいメッセージをJSONとして読み込みMessageオブジェクトにマッピングする
+		err := ws.ReadJSON(&msg)
+		if err != nil {
+			log.Printf("error: %v", err)
+			delete(clients, ws)
+			break
+		}
+		// 新しく受信されたメッセージをブロードキャストチャネルに送る
+		broadcast <- msg
+	}
+}
+
+func handleMessages() {
+	for {
+		// ブロードキャストチャネルから次のメッセージを受け取る
+		msg := <-broadcast
+		// 現在接続しているクライアント全てにメッセージを送信する
+		for client := range clients {
+			err := client.WriteJSON(msg)
+			if err != nil {
+				log.Printf("error: %v", err)
+				client.Close()
+				delete(clients, client)
+			}
+		}
+	}
+}
+
+// Thing for Thing
+type Thing struct {
+	Name string
+}
+
+var b bool
+
 // Get101 for to get 101
 func Get101(w rest.ResponseWriter, r *rest.Request) {
-	w.WriteHeader(http.StatusSwitchingProtocols)
-	return
+
+	if b == false {
+		b = true
+		w.WriteHeader(http.StatusSwitchingProtocols)
+	} else {
+		b = false
+		w.WriteHeader(http.StatusOK)
+	}
+
+	// cpt := 0
+	// for {
+	// 	cpt++
+	// 	w.WriteJson(
+	// 		&Thing{
+	// 			Name: fmt.Sprintf("thing #%d", cpt),
+	// 		},
+	// 	)
+	// 	w.WriteHeader(http.StatusSwitchingProtocols)
+	// 	w.(http.ResponseWriter).Write([]byte("\n"))
+	// 	// Flush the buffer to client
+	// 	w.(http.Flusher).Flush()
+	// 	// wait 1 seconds
+	// 	time.Sleep(time.Duration(1) * time.Second)
+	// 	if cpt == 10 {
+	// 		return
+	// 	}
+	// }
 }
 
 // Get200 for to get 200
